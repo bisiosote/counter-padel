@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Marcador de Pádel</title>
+<style>
+:root{--bg:#f2f4f7;--card:#fff;--text:#14202b;--mut:#5b6b7a;--a:#1d4ed8;--b:#dc2626;--btn:#dfe5ec;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#10161c;--card:#1b2530;--text:#eef2f6;--mut:#9fb0c0;--a:#2563eb;--b:#dc2626;--btn:#2a3745;color-scheme:dark}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;gap:10px;padding:10px;user-select:none}
+.board{flex:1;display:grid;grid-template-rows:1fr 1fr;gap:10px;min-height:0}
+@media (orientation:landscape){.board{grid-template-rows:none;grid-template-columns:1fr 1fr}}
+.card{background:var(--c);color:#fff;border-radius:20px;display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:10px;padding:0 14px;cursor:pointer;min-height:0;overflow:hidden}
+#cA{--c:var(--a)}#cB{--c:var(--b)}
+.side{display:flex;flex-direction:column;gap:6px;flex:0 0 auto}
+.card h2{margin:0 0 4px;font-size:clamp(20px,min(3.4vh,6vw),30px);color:#fff}
+.pts{flex:1;text-align:center;font-size:clamp(80px,min(31vh,44vw),300px);font-weight:800;line-height:1}
+.pts.sm{font-size:clamp(28px,min(9vh,14vw),90px)}
+.meta{display:flex;align-items:baseline;gap:8px;font-size:clamp(20px,min(3.4vh,6vw),30px);color:rgba(255,255,255,.85)}
+.meta b{color:#fff;font-size:1.7em;line-height:1}
+#info{text-align:center;color:var(--mut);font-size:15px;min-height:20px}
+.bar{display:flex;gap:8px}
+.bar button{flex:1;padding:9px 6px;font-size:14px;font-weight:600;border:0;border-radius:12px;background:var(--btn);color:var(--text)}
+#ov{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;text-align:center;z-index:5}
+#ov button{padding:18px 40px;font-size:22px;font-weight:700;border:0;border-radius:16px;background:var(--a);color:#fff}
+#ov p{max-width:420px;color:var(--mut);margin:0;line-height:1.4}
+</style>
+</head>
+<body>
+<div id="ov">
+  <h1 style="margin:0">Marcador de Pádel</h1>
+  <p>Control Bluetooth: Siguiente / Vol + = punto para Equipo B · Anterior / Vol − = punto para Equipo A.<br>También puedes tocar cada cuadro para sumar un punto.</p>
+  <button id="go">Comenzar</button>
+</div>
+
+<div id="info"></div>
+<div class="board">
+  <div class="card" id="cA"><div class="side"><h2>Equipo A</h2><div class="meta">Juegos <b id="gA">0</b></div><div class="meta">Sets <b id="sA">0</b></div></div><div class="pts" id="pA">0</div></div>
+  <div class="card" id="cB"><div class="side"><h2>Equipo B</h2><div class="meta">Juegos <b id="gB">0</b></div><div class="meta">Sets <b id="sB">0</b></div></div><div class="pts" id="pB">0</div></div>
+</div>
+<div class="bar">
+  <button id="undo">↩ Deshacer</button>
+  <button id="mute">🔊 Voz</button>
+  <button id="reset">⟲ Reiniciar</button>
+</div>
+
+<script>
+var S, undoStack = [], muted = false, started = false;
+var W = ['cero','quince','treinta','cuarenta'];
+var N = ['Equipo A','Equipo B'];
+
+function fresh(){ return {p:[0,0], g:[0,0], s:[0,0], hist:[], tb:false, over:false}; }
+S = fresh();
+
+function label(t){
+  var o = 1 - t, a = S.p[t], b = S.p[o];
+  if (S.tb) return String(a);
+  if (a >= 3 && b >= 3){
+    if (a === b) return 'Iguales';
+    return a > b ? 'Ventaja' : '40';
+  }
+  return ['0','15','30','40'][a];
+}
+function speakScore(){
+  var a = S.p[0], b = S.p[1];
+  if (S.tb){
+    if (a === b) return a + ' iguales';
+    return (a > b ? N[0] : N[1]) + ', ' + Math.max(a, b) + ' ' + Math.min(a, b);
+  }
+  if (a >= 3 && b >= 3){
+    if (a === b) return 'Iguales';
+    return 'Ventaja ' + (a > b ? N[0] : N[1]);
+  }
+  if (a === b) return W[a] + ' iguales';
+  var hi = Math.max(a, b), lo = Math.min(a, b);
+  return (a > b ? N[0] : N[1]) + ', ' + W[hi] + ' ' + W[lo];
+}
+function say(txt){
+  if (muted || !window.speechSynthesis) return;
+  try{
+    speechSynthesis.cancel();
+    var u = new SpeechSynthesisUtterance(txt);
+    u.lang = 'es-MX'; u.rate = 1; u.volume = 1;
+    speechSynthesis.speak(u);
+  }catch(e){}
+}
+function render(){
+  ['A','B'].forEach(function(k,i){
+    var el = document.getElementById('p'+k);
+    var l = label(i);
+    el.textContent = l;
+    el.className = 'pts' + (l.length > 3 ? ' sm' : '');
+    document.getElementById('g'+k).textContent = S.g[i];
+    document.getElementById('s'+k).textContent = S.s[i];
+  });
+  var info = '';
+  if (S.hist.length) info += 'Sets: ' + S.hist.join('  ·  ');
+  if (S.tb && !S.over) info += (info ? '  —  ' : '') + 'Tie-break';
+  if (S.over) info = 'Partido terminado. ' + info;
+  document.getElementById('info').textContent = info;
+}
+function point(t){
+  if (S.over) { say('El partido ya terminó'); return; }
+  undoStack.push(JSON.stringify(S));
+  var o = 1 - t, msg = '';
+  S.p[t]++;
+  var a = S.p[t], b = S.p[o], game = false;
+  if (S.tb) game = a >= 7 && a - b >= 2;
+  else game = a >= 4 && a - b >= 2;
+  if (!game){
+    msg = speakScore();
+  } else {
+    S.p = [0,0];
+    S.g[t]++;
+    var ga = S.g[t], gb = S.g[o], setWon = false;
+    if (S.tb) setWon = true;
+    else if (ga >= 6 && ga - gb >= 2) setWon = true;
+    else if (ga === 7) setWon = true;
+    if (!setWon){
+      msg = 'Juego ' + N[t] + '. Juegos, ' + S.g[0] + ' a ' + S.g[1] + '.';
+      if (S.g[0] === 6 && S.g[1] === 6){ S.tb = true; msg += ' Tie-break.'; }
+    } else {
+      S.hist.push(S.g[0] + '-' + S.g[1]);
+      S.s[t]++;
+      var gtxt = S.g[0] + ' a ' + S.g[1];
+      S.g = [0,0]; S.tb = false;
+      if (S.s[t] === 2){
+        S.over = true;
+        msg = 'Set y partido para ' + N[t] + '. ' + gtxt + '.';
+      } else {
+        msg = 'Set para ' + N[t] + '. ' + gtxt + '. Sets, ' + S.s[0] + ' a ' + S.s[1] + '.';
+        if (S.s[0] === 1 && S.s[1] === 1) msg += ' Tercer set.';
+      }
+    }
+  }
+  render();
+  say(msg);
+}
+function undo(){
+  if (!undoStack.length){ say('Nada que deshacer'); return; }
+  S = JSON.parse(undoStack.pop());
+  render();
+  say('Punto corregido. ' + (S.over ? '' : speakScore()));
+}
+var resetTimer = null;
+function reset(){
+  var btn = document.getElementById('reset');
+  if (!resetTimer){
+    btn.textContent = '¿Seguro? Toca otra vez';
+    say('Toca otra vez para reiniciar');
+    resetTimer = setTimeout(function(){
+      resetTimer = null;
+      btn.textContent = '⟲ Reiniciar';
+    }, 3000);
+    return;
+  }
+  clearTimeout(resetTimer);
+  resetTimer = null;
+  btn.textContent = '⟲ Reiniciar';
+  S = fresh(); undoStack = [];
+  render(); say('Marcador reiniciado');
+}
+
+document.getElementById('cA').onclick = function(){ point(0); };
+document.getElementById('cB').onclick = function(){ point(1); };
+document.getElementById('undo').onclick = undo;
+document.getElementById('reset').onclick = reset;
+document.getElementById('mute').onclick = function(){
+  muted = !muted;
+  this.textContent = muted ? '🔇 Voz' : '🔊 Voz';
+};
+
+/* Teclas de volumen (funcionan donde el navegador las entrega) */
+document.addEventListener('keydown', function(e){
+  if (!started) return;
+  var k = e.key, c = e.code;
+  var up = k === 'AudioVolumeUp' || k === 'VolumeUp' || c === 'AudioVolumeUp' || c === 'VolumeUp' || k === 'ArrowUp' || k === 'MediaTrackNext';
+  var down = k === 'AudioVolumeDown' || k === 'VolumeDown' || c === 'AudioVolumeDown' || c === 'VolumeDown' || k === 'ArrowDown' || k === 'MediaTrackPrevious';
+  if (up){ e.preventDefault(); point(1); }
+  else if (down){ e.preventDefault(); point(0); }
+});
+
+/* Control Bluetooth: audio silencioso + Media Session para recibir Siguiente/Anterior */
+function startBT(){
+  try{
+    var rate = 8000, n = rate * 10, buf = new ArrayBuffer(44 + n), v = new DataView(buf);
+    var ws = function(o, s){ for (var i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+    ws(0,'RIFF'); v.setUint32(4, 36 + n, true); ws(8,'WAVE'); ws(12,'fmt ');
+    v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true);
+    v.setUint32(24,rate,true); v.setUint32(28,rate,true); v.setUint16(32,1,true); v.setUint16(34,8,true);
+    ws(36,'data'); v.setUint32(40, n, true);
+    for (var j = 0; j < n; j++) v.setUint8(44 + j, 128);
+    var au = new Audio(URL.createObjectURL(new Blob([buf], {type:'audio/wav'})));
+    au.loop = true;
+    au.play().catch(function(){});
+    window._au = au;
+    if (navigator.mediaSession){
+      navigator.mediaSession.metadata = new MediaMetadata({title:'Marcador de Pádel', artist:'Equipo A vs Equipo B'});
+      navigator.mediaSession.setActionHandler('nexttrack', function(){ point(1); });
+      navigator.mediaSession.setActionHandler('previoustrack', function(){ point(0); });
+      navigator.mediaSession.setActionHandler('pause', function(){ au.play(); });
+      navigator.mediaSession.setActionHandler('play', function(){ au.play(); });
+    }
+  }catch(e){}
+}
+
+document.getElementById('go').onclick = function(){
+  started = true;
+  startBT();
+  document.getElementById('ov').style.display = 'none';
+  try{ if (navigator.wakeLock) navigator.wakeLock.request('screen').catch(function(){}); }catch(e){}
+  say('Marcador listo');
+};
+document.addEventListener('visibilitychange', function(){
+  if (started && document.visibilityState === 'visible'){
+    try{ if (navigator.wakeLock) navigator.wakeLock.request('screen').catch(function(){}); }catch(e){}
+  }
+});
+render();
+</script>
+</body>
+</html>
