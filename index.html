@@ -16,9 +16,9 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 #cA{--c:var(--a)}#cB{--c:var(--b)}
 .side{display:flex;flex-direction:column;gap:6px;flex:0 0 auto}
 .card h2{margin:0 0 4px;font-size:clamp(20px,min(3.4vh,6vw),30px);color:#fff}
-.pts{flex:1;text-align:center;font-size:clamp(80px,min(31vh,44vw),300px);font-weight:800;line-height:1}
-.pts.sm{font-size:clamp(28px,min(9vh,14vw),90px)}
-.meta{display:flex;align-items:baseline;gap:8px;font-size:clamp(20px,min(3.4vh,6vw),30px);color:rgba(255,255,255,.85)}
+.pts{flex:1;text-align:center;font-size:calc(clamp(80px,min(31vh,44vw),300px) * var(--ps,1));font-weight:800;line-height:1}
+.pts.sm{font-size:calc(clamp(28px,min(9vh,14vw),90px) * var(--ps,1))}
+.meta{display:flex;align-items:baseline;gap:8px;font-size:calc(clamp(20px,min(3.4vh,6vw),30px) * var(--ms,1));color:rgba(255,255,255,.85)}
 .meta b{color:#fff;font-size:1.7em;line-height:1}
 #info{text-align:center;color:var(--mut);font-size:15px;min-height:20px}
 .bar{display:flex;gap:8px}
@@ -38,6 +38,12 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 #ed label{display:flex;align-items:center;gap:6px;font-size:16px}
 #ed input[type=number],#ed select{font-size:18px;padding:8px;width:84px;border-radius:10px;border:1px solid var(--mut);background:var(--bg);color:var(--text)}
 #ed select{width:auto}
+#ov .cf{padding:12px 22px;font-size:17px;background:var(--btn);color:var(--text)}
+#cfg{position:fixed;inset:0;background:var(--bg);display:none;overflow:auto;padding:16px;z-index:7}
+#cfg .sl{display:block;margin:0 0 14px;padding:12px;border-radius:14px;background:var(--card);font-size:16px}
+#cfg input[type=range]{width:100%;margin-top:8px}
+#cfg .bar button{padding:14px 6px;font-size:16px}
+#pv{height:34vh;margin-bottom:14px;--c:var(--a);cursor:default}
 #ed .bar button{padding:14px 6px;font-size:16px}
 </style>
 </head>
@@ -48,6 +54,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
   <div style="font-weight:600">¿Quién saca primero?</div>
   <div style="display:flex;gap:10px"><button class="sv" id="svA">Equipo A</button><button class="sv" id="svB">Equipo B</button></div>
   <button id="go">Comenzar</button>
+  <button class="cf" id="cfgBtn">⚙️ Configuración</button>
 </div>
 
 <div id="ed">
@@ -65,6 +72,13 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
   <label class="erow"><input id="etb" type="checkbox"> Tie-break (puntos numéricos)</label>
   <label class="erow">Saca <select id="esv"><option value="0">Equipo A</option><option value="1">Equipo B</option></select></label>
   <div class="bar"><button id="edCancel">Cancelar</button><button id="edSave">Guardar</button></div>
+</div>
+<div id="cfg">
+  <h2 style="margin:0 0 12px">Configuración</h2>
+  <div class="card" id="pv"><div class="side"><h2>Equipo A</h2><div class="meta">Juegos <b>3</b></div><div class="meta">Sets <b>1</b></div></div><div class="pts">40</div></div>
+  <label class="sl">Tamaño del marcador: <b id="rsV">100%</b><input id="rs" type="range" min="60" max="130" step="5" value="100"></label>
+  <label class="sl">Tamaño de juegos y sets: <b id="rmV">100%</b><input id="rm" type="range" min="60" max="130" step="5" value="100"></label>
+  <div class="bar"><button id="cfgReset">Restablecer</button><button id="cfgOk">Listo</button></div>
 </div>
 <div id="info"></div>
 <div class="board">
@@ -325,6 +339,27 @@ document.getElementById('edit').onclick = openEd;
 document.getElementById('etb').onchange = tbToggle;
 document.getElementById('edCancel').onclick = function(){ document.getElementById('ed').style.display = 'none'; };
 document.getElementById('edSave').onclick = saveEd;
+var cfgS = {ps:100, ms:100};
+function applyCfg(){
+  var r = document.documentElement.style;
+  r.setProperty('--ps', cfgS.ps / 100);
+  r.setProperty('--ms', cfgS.ms / 100);
+  document.getElementById('rsV').textContent = cfgS.ps + '%';
+  document.getElementById('rmV').textContent = cfgS.ms + '%';
+  document.getElementById('rs').value = cfgS.ps;
+  document.getElementById('rm').value = cfgS.ms;
+}
+function saveCfg(){ try{ localStorage.setItem('padelCfg', JSON.stringify(cfgS)); }catch(e){} }
+try{
+  var sv0 = JSON.parse(localStorage.getItem('padelCfg') || 'null');
+  if (sv0){ cfgS.ps = +sv0.ps || 100; cfgS.ms = +sv0.ms || 100; }
+}catch(e){}
+document.getElementById('rs').oninput = function(){ cfgS.ps = +this.value; applyCfg(); saveCfg(); };
+document.getElementById('rm').oninput = function(){ cfgS.ms = +this.value; applyCfg(); saveCfg(); };
+document.getElementById('cfgBtn').onclick = function(){ document.getElementById('cfg').style.display = 'block'; };
+document.getElementById('cfgOk').onclick = function(){ document.getElementById('cfg').style.display = 'none'; };
+document.getElementById('cfgReset').onclick = function(){ cfgS = {ps:100, ms:100}; applyCfg(); saveCfg(); };
+applyCfg();
 syncSv();
 render();
 </script>
